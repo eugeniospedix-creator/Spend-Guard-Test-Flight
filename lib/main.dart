@@ -463,7 +463,7 @@ class _SplashScreenState extends State<SplashScreen>
                           ),
                           SizedBox(height: 8),
                           Text(
-                            'Protect your future before you spend',
+                            'See the future cost before you spend',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color: AppColors.muted,
@@ -557,7 +557,7 @@ class OnboardingScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 14),
                 const Text(
-                  'SpendGuard turns every purchase into days gained or delayed toward your future goal.',
+                  'SpendGuard shows how every purchase affects your dream, your daily freedom and your future self.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: AppColors.muted,
@@ -894,7 +894,7 @@ class _MainScreenState extends State<MainScreen> {
           NavigationDestination(icon: Icon(Icons.flight_takeoff_rounded), label: 'Dream'),
           NavigationDestination(icon: Icon(Icons.storefront_rounded), label: 'Radar'),
           NavigationDestination(icon: Icon(Icons.psychology_alt_rounded), label: 'Guard'),
-          NavigationDestination(icon: Icon(Icons.group_rounded), label: 'Social'),
+          NavigationDestination(icon: Icon(Icons.group_rounded), label: 'Circle'),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -970,7 +970,7 @@ class _QuickSetupSheetState extends State<QuickSetupSheet> {
             const SizedBox(height: 16),
             const Header(
               title: 'Smart setup',
-              subtitle: 'Quick setup. SpendGuard estimates smart limits automatically.',
+              subtitle: 'Add only the essentials. SpendGuard creates smart limits automatically.',
             ),
             const SizedBox(height: 16),
             const SmartSetupInfoCard(),
@@ -1017,7 +1017,7 @@ class _QuickSetupSheetState extends State<QuickSetupSheet> {
                   await widget.onSave(b);
                 },
                 icon: const Icon(Icons.save_rounded),
-                label: const Text('Save setup'),
+                label: const Text('Activate SpendGuard'),
               ),
             ),
           ],
@@ -1076,7 +1076,7 @@ class HomeScreen extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        'Dream protection in real time',
+                        'See the future cost before you spend',
                         style: TextStyle(color: AppColors.muted, fontSize: 13),
                       ),
                     ],
@@ -1136,7 +1136,7 @@ class HomeScreen extends StatelessWidget {
                   : 'Future you says: set one dream and let SpendGuard protect it.',
             ),
             const SizedBox(height: 14),
-            ActivityList(activity: activity),
+            ProtectionStreakCard(activity: activity),
           ],
         ),
       ),
@@ -1202,6 +1202,10 @@ class DreamScreen extends StatelessWidget {
                   ],
                 ),
               ),
+            const SizedBox(height: 14),
+            DreamTimelineCard(budget: budget),
+            const SizedBox(height: 14),
+            ProtectionBadgesCard(budget: budget),
             const SizedBox(height: 14),
             DreamPulseCard(budget: budget),
           ],
@@ -1429,6 +1433,186 @@ class _GuardScreenState extends State<GuardScreen> {
 
 
 
+
+
+class DreamTimelineCard extends StatelessWidget {
+  final BudgetData budget;
+
+  const DreamTimelineCard({super.key, required this.budget});
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = budget.dreamProgress.clamp(0, 1).toDouble();
+    final dream = budget.dreamName.isEmpty ? 'Your dream' : budget.dreamName;
+
+    return PremiumCard(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Dream Timeline™', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 8),
+          Text(
+            budget.hasDream
+                ? 'Today to $dream: ${budget.daysRemaining} days remaining.'
+                : 'Add a dream to see your timeline.',
+            style: const TextStyle(color: AppColors.muted, height: 1.35),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              const Text('Today', style: TextStyle(color: AppColors.muted, fontSize: 12)),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Stack(
+                    alignment: Alignment.centerLeft,
+                    children: [
+                      Container(
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                      FractionallySizedBox(
+                        widthFactor: progress,
+                        child: Container(
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: AppColors.teal,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                      ),
+                      Align(
+                        alignment: Alignment(-1 + (progress * 2), 0),
+                        child: Container(
+                          width: 18,
+                          height: 18,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: AppColors.teal,
+                            border: Border.all(color: AppColors.text, width: 2),
+                            boxShadow: [BoxShadow(color: AppColors.teal.withOpacity(0.35), blurRadius: 14)],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Text(dream, style: const TextStyle(color: AppColors.muted, fontSize: 12)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ProtectionBadgesCard extends StatelessWidget {
+  final BudgetData budget;
+
+  const ProtectionBadgesCard({super.key, required this.budget});
+
+  @override
+  Widget build(BuildContext context) {
+    final protected = budget.dreamVault;
+    final badges = [
+      ('First Protection', protected > 0, Icons.lock_rounded),
+      ('€100 Protected', protected >= 100, Icons.savings_rounded),
+      ('€500 Protected', protected >= 500, Icons.workspace_premium_rounded),
+      ('Dream Master', budget.dreamProgress >= 1, Icons.emoji_events_rounded),
+    ];
+
+    return PremiumCard(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Protection Badges™', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 8),
+          const Text(
+            'Unlock badges when you protect money instead of spending impulsively.',
+            style: TextStyle(color: AppColors.muted, height: 1.35),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: badges.map((b) {
+              final unlocked = b.$2;
+              return Container(
+                width: 145,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: (unlocked ? AppColors.teal : AppColors.muted).withOpacity(unlocked ? 0.12 : 0.06),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: (unlocked ? AppColors.teal : AppColors.muted).withOpacity(0.22)),
+                ),
+                child: Column(
+                  children: [
+                    Icon(b.$3, color: unlocked ? AppColors.teal : AppColors.muted),
+                    const SizedBox(height: 8),
+                    Text(
+                      b.$1,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: unlocked ? AppColors.text : AppColors.muted,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ProtectionStreakCard extends StatelessWidget {
+  final List<ActivityItem> activity;
+
+  const ProtectionStreakCard({super.key, required this.activity});
+
+  int get protectedCount => activity.where((a) => a.positive).length;
+
+  @override
+  Widget build(BuildContext context) {
+    final count = protectedCount;
+    final title = count == 0 ? 'Start your protection streak' : '$count Protected Decision${count == 1 ? '' : 's'}';
+    final subtitle = count == 0
+        ? 'Skip one impulse purchase to start building your Dream Vault.'
+        : 'Every protected decision keeps your future closer.';
+
+    return PremiumCard(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const IconBadge(icon: Icons.local_fire_department_rounded, color: AppColors.amber),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 6),
+                Text(subtitle, style: const TextStyle(color: AppColors.muted, height: 1.4)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
 class SpendGuardMomentCard extends StatelessWidget {
   final BudgetData budget;
   final StoreDecision? decision;
@@ -1603,6 +1787,38 @@ class TimeCurrencyCard extends StatelessWidget {
   }
 }
 
+
+class BetaFeatureCard extends StatelessWidget {
+  const BetaFeatureCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return PremiumCard(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const IconBadge(icon: Icons.workspace_premium_rounded, color: AppColors.purple),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text('Beta concept', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                SizedBox(height: 6),
+                Text(
+                  'This tests the social money experience without moving real money yet. Perfect for App Store beta feedback.',
+                  style: TextStyle(color: AppColors.muted, height: 1.4),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
 class SocialScreen extends StatefulWidget {
   final BudgetData budget;
   final List<SocialRequest> requests;
@@ -1660,6 +1876,8 @@ class _SocialScreenState extends State<SocialScreen> {
               subtitle: 'Save with friends, request money, split goals and turn dreams into a race.',
             ),
             const SizedBox(height: 16),
+            const BetaFeatureCard(),
+            const SizedBox(height: 14),
             PremiumCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1701,10 +1919,10 @@ class _SocialScreenState extends State<SocialScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Request or split money', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
+                  const Text('Request or split money (trial)', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900)),
                   const SizedBox(height: 8),
                   const Text(
-                    'Trial mode: this creates an in-app request only. Real money transfer needs regulated payment partners later.',
+                    'Trial mode: create requests and split purchases inside SpendGuard. Real transfers can be added later with a regulated payment partner.',
                     style: TextStyle(color: AppColors.muted, height: 1.35),
                   ),
                   const SizedBox(height: 14),
@@ -1946,7 +2164,7 @@ class SmartSetupInfoCard extends StatelessWidget {
           SizedBox(width: 10),
           Expanded(
             child: Text(
-              'No complicated setup. Add income, fixed expenses and one dream. SpendGuard will create smart limits automatically.',
+              'No complicated setup. Add income, fixed expenses and one dream. SpendGuard automatically builds your daily safe spend, category limits and DreamGuard plan.',
               style: TextStyle(color: AppColors.text, height: 1.35),
             ),
           ),
@@ -2003,9 +2221,9 @@ class FreedomCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('LIFE FREEDOM', style: TextStyle(color: Color(0xFF06323A), fontWeight: FontWeight.w900, letterSpacing: 1.1)),
+          const Text('DREAM HEALTH', style: TextStyle(color: Color(0xFF06323A), fontWeight: FontWeight.w900, letterSpacing: 1.1)),
           const SizedBox(height: 8),
-          Text('${budget.lifeFreedom.toStringAsFixed(0)}/100', style: const TextStyle(color: Color(0xFF031014), fontSize: 52, fontWeight: FontWeight.w900)),
+          Text('${budget.lifeFreedom.toStringAsFixed(0)}%', style: const TextStyle(color: Color(0xFF031014), fontSize: 52, fontWeight: FontWeight.w900)),
           Text(
             budget.hasDream
                 ? '${budget.dreamName} is ${(budget.dreamProgress * 100).toStringAsFixed(0)}% protected'
