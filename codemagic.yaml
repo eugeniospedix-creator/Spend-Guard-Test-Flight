@@ -5,7 +5,7 @@ workflows:
     max_build_duration: 120
 
     integrations:
-      app_store_connect: apple_distribution
+      app_store_connect: Codemagic
 
     environment:
       flutter: stable
@@ -15,23 +15,27 @@ workflows:
         bundle_identifier: com.eugeniospedicato.spendguard
 
     scripts:
-      - name: Get packages
-        script: flutter pub get
+      - name: Get Flutter packages
+        script: |
+          flutter pub get
 
-      - name: Install pods
+      - name: Install CocoaPods
         script: |
           cd ios
           pod install
           cd ..
 
-      - name: Apply iOS signing
-        script: xcode-project use-profiles
+      - name: Set up iOS signing
+        script: |
+          xcode-project use-profiles
 
       - name: Build Android APK
-        script: flutter build apk --release
+        script: |
+          flutter build apk --release
 
       - name: Build iOS IPA
-        script: flutter build ipa --release
+        script: |
+          flutter build ipa --release
 
     artifacts:
       - build/**/outputs/**/*.apk
@@ -41,3 +45,4 @@ workflows:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
+        submit_to_app_store: false
