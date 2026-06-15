@@ -5,7 +5,7 @@ workflows:
     max_build_duration: 120
 
     integrations:
-  app_store_connect: apple_distribution
+      app_store_connect: apple_distribution
 
     environment:
       flutter: stable
@@ -31,7 +31,7 @@ workflows:
         script: flutter build apk --release
 
       - name: Build iOS IPA
-        script: flutter build ipa --release --export-options-plist=/Users/builder/export_options.plist
+        script: flutter build ipa --release
 
     artifacts:
       - build/**/outputs/**/*.apk
