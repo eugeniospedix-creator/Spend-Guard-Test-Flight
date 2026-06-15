@@ -1,6 +1,7 @@
 {
   "project_info": {
     "project_number": "344435057323",
+    "firebase_url": "https://spendguard-7ac04-default-rtdb.europe-west1.firebasedatabase.app",
     "project_id": "spendguard-7ac04",
     "storage_bucket": "spendguard-7ac04.firebasestorage.app"
   },
@@ -10,6 +11,25 @@
         "mobilesdk_app_id": "1:344435057323:android:c785ad975e4de17e8bcdee",
         "android_client_info": {
           "package_name": "Spend.guard1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBiYcW8ksvpIRbE15TquBWhLQ92r6slM4o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:344435057323:android:a732efc294406e478bcdee",
+        "android_client_info": {
+          "package_name": "com.eugeniospedicato.spendguard"
         }
       },
       "oauth_client": [],
