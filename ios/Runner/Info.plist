@@ -66,5 +66,13 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+
+	<!-- SpendGuard Location Permissions -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>SpendGuard uses your location to detect nearby stores and provide personalised budget insights based on your spending goals.</string>
+
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>SpendGuard uses your location in the background to notify you about spending limits and budget alerts when entering supported stores.</string>
+
 </dict>
 </plist>
