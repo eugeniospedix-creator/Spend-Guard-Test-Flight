@@ -71,7 +71,9 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>SpendGuard uses your location to detect nearby stores and provide personalised budget insights based on your spending goals.</string>
 
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<key>NSLocationAlwaysUsageDescription</key>
+<string>SpendGuard needs your location even when the app is not open to alert you when you enter supported stores.</string>
+<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>SpendGuard uses your location in the background to notify you about spending limits and budget alerts when entering supported stores.</string>
 
 </dict>
