@@ -470,52 +470,54 @@ class StoreInfo {
   }
 }
 
-const trialStores = [
-  StoreInfo(name: 'Tesco O\'Connell Street', category: 'Groceries', lat: 53.3498, lng: -6.2603, radius: 130, risk: 25),
-  StoreInfo(name: 'Zara Henry Street', category: 'Clothing', lat: 53.3495, lng: -6.2637, radius: 120, risk: 62),
-  StoreInfo(name: 'Currys Jervis', category: 'Electronics', lat: 53.3477, lng: -6.2667, radius: 150, risk: 86),
-];
 
 class RealStoreService {
   static bool get hasApiKey => googlePlacesApiKey.trim().isNotEmpty;
 
   static Future<StoreInfo?> detectNearestStore(Position position) async {
-    if (!hasApiKey) return _fallbackTrialStore(position);
+    if (!hasApiKey) return null;
 
     final uri = Uri.https('maps.googleapis.com', '/maps/api/place/nearbysearch/json', {
       'location': '${position.latitude},${position.longitude}',
-      'radius': '100',
+      'radius': '120',
       'type': 'store',
       'key': googlePlacesApiKey,
     });
 
     try {
       final response = await http.get(uri).timeout(const Duration(seconds: 8));
-      if (response.statusCode != 200) return _fallbackTrialStore(position);
+      if (response.statusCode != 200) return null;
+
       final decoded = jsonDecode(response.body) as Map<String, dynamic>;
       final results = (decoded['results'] as List?) ?? [];
       if (results.isEmpty) return null;
 
       Map<String, dynamic>? best;
       double bestDistance = double.infinity;
-      for (final item in results.take(8)) {
+
+      for (final item in results.take(10)) {
         final place = item as Map<String, dynamic>;
         final location = (place['geometry'] as Map<String, dynamic>?)?['location'] as Map<String, dynamic>?;
         if (location == null) continue;
+
         final lat = (location['lat'] as num).toDouble();
         final lng = (location['lng'] as num).toDouble();
         final distance = Geolocator.distanceBetween(position.latitude, position.longitude, lat, lng);
+
         if (distance < bestDistance) {
           bestDistance = distance;
           best = place;
         }
       }
+
       if (best == null || bestDistance > 120) return null;
+
       final location = (best['geometry'] as Map<String, dynamic>)['location'] as Map<String, dynamic>;
       final name = (best['name'] ?? 'Nearby store').toString();
       final types = ((best['types'] as List?) ?? []).map((e) => e.toString()).toList();
       final category = _categoryFromTypes(name, types);
       final risk = _riskForCategory(category);
+
       return StoreInfo(
         name: name,
         category: category,
@@ -525,30 +527,17 @@ class RealStoreService {
         risk: risk,
       );
     } catch (_) {
-      return _fallbackTrialStore(position);
+      return null;
     }
-  }
-
-  static StoreInfo? _fallbackTrialStore(Position p) {
-    StoreInfo? best;
-    double bestDistance = double.infinity;
-    for (final s in trialStores) {
-      final d = Geolocator.distanceBetween(p.latitude, p.longitude, s.lat, s.lng);
-      if (d < bestDistance) {
-        bestDistance = d;
-        best = s;
-      }
-    }
-    if (best != null && bestDistance <= best.radius) return best;
-    return null;
   }
 
   static String _categoryFromTypes(String name, List<String> types) {
     final n = name.toLowerCase();
-    if (types.contains('grocery_or_supermarket') || n.contains('tesco') || n.contains('lidl') || n.contains('aldi')) return 'Groceries';
-    if (types.contains('clothing_store') || n.contains('zara') || n.contains('primark') || n.contains('h&m')) return 'Clothing';
+    if (types.contains('grocery_or_supermarket') || n.contains('supermarket') || n.contains('tesco') || n.contains('lidl') || n.contains('aldi') || n.contains('spar')) return 'Groceries';
+    if (types.contains('clothing_store') || n.contains('zara') || n.contains('primark') || n.contains('h&m') || n.contains('tk maxx')) return 'Clothing';
     if (types.contains('electronics_store') || n.contains('currys') || n.contains('apple')) return 'Electronics';
-    if (types.contains('restaurant') || types.contains('cafe')) return 'Food & Coffee';
+    if (types.contains('restaurant') || types.contains('cafe') || types.contains('bakery') || types.contains('meal_takeaway')) return 'Food & Coffee';
+    if (types.contains('pharmacy')) return 'Health';
     return 'Shopping';
   }
 
@@ -556,6 +545,8 @@ class RealStoreService {
     switch (category) {
       case 'Groceries':
         return 25;
+      case 'Health':
+        return 35;
       case 'Food & Coffee':
         return 45;
       case 'Clothing':
@@ -1019,12 +1010,11 @@ class _MainScreenState extends State<MainScreen> {
 
   Future<void> checkLocation() async {
     if (kIsWeb) {
-      final d = decisionFor(trialStores.first);
       setState(() {
-        gpsReady = true;
-        currentStore = trialStores.first.name;
-        gpsStatus = 'Web demo mode. Real GPS works on Android/iPhone builds.';
-        decision = d;
+        gpsReady = false;
+        currentStore = tr(context, 'noStore');
+        gpsStatus = 'Real GPS store detection works on iPhone and Android only.';
+        decision = null;
       });
       return;
     }
@@ -1035,10 +1025,18 @@ class _MainScreenState extends State<MainScreen> {
       return;
     }
     var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.whileInUse) {
+      permission = await Geolocator.requestPermission();
+    }
     if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
-      setState(() => gpsStatus = 'Location permission denied');
+      setState(() => gpsStatus = 'Location permission denied. Enable Location Always in iPhone Settings.');
       return;
+    }
+    if (permission == LocationPermission.whileInUse) {
+      setState(() => gpsStatus = 'Location works only while app is open. Enable Always for shop alerts.');
     }
     final position = await Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.high));
     await handlePosition(position, force: true);
@@ -1602,8 +1600,8 @@ class GpsScreen extends StatelessWidget {
             Header(
               title: tr(context, 'gpsRadar'),
               subtitle: googlePlacesApiKey.isEmpty
-                  ? 'Ready for real GPS. Add Google Places API key later.'
-                  : 'Google Places live detection active.',
+                  ? 'Google Places API key missing. Real store detection is off.'
+                  : 'Google Places live detection active. Demo stores removed.',
             ),
             const SizedBox(height: 16),
             PremiumCard(
@@ -1632,28 +1630,6 @@ class GpsScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 14),
-            ...trialStores.map(
-              (s) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: PremiumCard(
-                  child: Row(
-                    children: [
-                      CircleAvatar(backgroundColor: s.color.withOpacity(0.15), child: Icon(Icons.storefront_rounded, color: s.color)),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(s.name, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
-                            Text('${s.category} • ${s.riskLabel}', style: TextStyle(color: s.color, fontWeight: FontWeight.w700)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
           ],
         ),
       ),
