@@ -28,7 +28,7 @@ workflows:
 
       - name: Build iOS IPA
         script: |
-          xcode-project build-ipa --workspace ios/Runner.xcworkspace --scheme Runner
+          xcode-project build-ipa --workspace ios/Runner.xcworkspace --scheme Runner --archive-xcargs "IPHONEOS_DEPLOYMENT_TARGET=15.0"
 
     artifacts:
       - build/ios/ipa/*.ipa
