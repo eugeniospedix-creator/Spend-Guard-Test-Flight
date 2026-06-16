@@ -15,19 +15,32 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'firebase_options.dart';
 
-// Add your Google Places API key here later.
-// When empty, SpendGuard uses local fallback geofences so you can test without cost.
+// Google Places API key for real store detection.
+// Restrict this key in Google Cloud to your iOS bundle ID before public release.
 const String googlePlacesApiKey = 'AIzaSyCxvHl7eUjN3GLRWmk45tdXJboXLcSxEFo';
 const String spendGuardAppIcon = 'assets/images/spendguard_app_icon.png';
 
+bool firebaseReady = false;
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  if (FirebaseAuth.instance.currentUser == null) {
-    await FirebaseAuth.instance.signInAnonymously();
-  }
+
   await NotificationService.init();
   runApp(const SpendGuardApp());
+
+  unawaited(_startFirebaseSafely());
+}
+
+Future<void> _startFirebaseSafely() async {
+  try {
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    if (FirebaseAuth.instance.currentUser == null) {
+      await FirebaseAuth.instance.signInAnonymously();
+    }
+    firebaseReady = true;
+  } catch (e) {
+    debugPrint('Firebase startup skipped: $e');
+  }
 }
 
 class AppColors {
@@ -72,6 +85,12 @@ class AppText {
       'message': 'Message',
       'language': 'Language',
       'notifications': 'Notifications',
+      'enterStoreAlert': 'When I enter a store',
+      'exitStoreAlert': 'When I leave a store',
+      'beforeBuyAlert': 'Before I buy',
+      'afterBuyAlert': 'After I buy',
+      'highRiskOnly': 'High-risk stores only',
+      'gpsSensitivity': 'GPS sensitivity',
       'budget': 'Budget',
       'income': 'Monthly income',
       'expenses': 'Fixed expenses',
@@ -106,6 +125,12 @@ class AppText {
       'message': 'Messaggio',
       'language': 'Lingua',
       'notifications': 'Notifiche',
+      'enterStoreAlert': 'Quando entro in un negozio',
+      'exitStoreAlert': 'Quando esco da un negozio',
+      'beforeBuyAlert': 'Prima di comprare',
+      'afterBuyAlert': 'Dopo aver comprato',
+      'highRiskOnly': 'Solo negozi ad alto rischio',
+      'gpsSensitivity': 'Sensibilità GPS',
       'budget': 'Budget',
       'income': 'Entrata mensile',
       'expenses': 'Spese fisse',
@@ -140,6 +165,12 @@ class AppText {
       'message': 'Mensaje',
       'language': 'Idioma',
       'notifications': 'Notificaciones',
+      'enterStoreAlert': 'Al entrar en una tienda',
+      'exitStoreAlert': 'Al salir de una tienda',
+      'beforeBuyAlert': 'Antes de comprar',
+      'afterBuyAlert': 'Después de comprar',
+      'highRiskOnly': 'Solo tiendas de alto riesgo',
+      'gpsSensitivity': 'Sensibilidad GPS',
       'budget': 'Presupuesto',
       'income': 'Ingreso mensual',
       'expenses': 'Gastos fijos',
@@ -174,6 +205,12 @@ class AppText {
       'message': 'Message',
       'language': 'Langue',
       'notifications': 'Notifications',
+      'enterStoreAlert': 'Quand j’entre dans un magasin',
+      'exitStoreAlert': 'Quand je quitte un magasin',
+      'beforeBuyAlert': 'Avant d’acheter',
+      'afterBuyAlert': 'Après achat',
+      'highRiskOnly': 'Magasins à haut risque seulement',
+      'gpsSensitivity': 'Sensibilité GPS',
       'budget': 'Budget',
       'income': 'Revenu mensuel',
       'expenses': 'Dépenses fixes',
@@ -253,61 +290,12 @@ class _SpendGuardAppState extends State<SpendGuardApp> {
             ),
           ),
         ),
-        home: const FounderLoader(),
+        home: const SplashScreen(),
       ),
     );
   }
 }
 
-
-class FounderLoader extends StatefulWidget {
-  const FounderLoader({super.key});
-
-  @override
-  State<FounderLoader> createState() => _FounderLoaderState();
-}
-
-class _FounderLoaderState extends State<FounderLoader> {
-  Future<void>? _preload;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _preload ??= Future.wait([
-      precacheImage(const AssetImage('assets/images/founder_welcome.png'), context),
-      precacheImage(const AssetImage(spendGuardAppIcon), context),
-    ]);
-  }
-
-  void _openApp() {
-    HapticFeedback.selectionClick();
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const SplashScreen()),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<void>(
-      future: _preload,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.done && snapshot.error == null) {
-          return FounderPhotoScreen(onEnter: _openApp);
-        }
-
-        if (snapshot.hasError) {
-          return const SplashScreen();
-        }
-
-        return const Scaffold(
-          backgroundColor: AppColors.bgDeep,
-          body: SizedBox.expand(),
-        );
-      },
-    );
-  }
-}
 
 class AppLanguageScope extends InheritedWidget {
   final AppLanguage language;
@@ -447,6 +435,76 @@ class BudgetData {
   }
 }
 
+
+class NotificationPrefs {
+  final bool onEnter;
+  final bool onExit;
+  final bool beforeBuying;
+  final bool afterBuying;
+  final bool highRiskOnly;
+  final double detectionRadiusMeters;
+
+  const NotificationPrefs({
+    required this.onEnter,
+    required this.onExit,
+    required this.beforeBuying,
+    required this.afterBuying,
+    required this.highRiskOnly,
+    required this.detectionRadiusMeters,
+  });
+
+  static const defaults = NotificationPrefs(
+    onEnter: true,
+    onExit: true,
+    beforeBuying: true,
+    afterBuying: true,
+    highRiskOnly: false,
+    detectionRadiusMeters: 25,
+  );
+
+  NotificationPrefs copyWith({
+    bool? onEnter,
+    bool? onExit,
+    bool? beforeBuying,
+    bool? afterBuying,
+    bool? highRiskOnly,
+    double? detectionRadiusMeters,
+  }) {
+    return NotificationPrefs(
+      onEnter: onEnter ?? this.onEnter,
+      onExit: onExit ?? this.onExit,
+      beforeBuying: beforeBuying ?? this.beforeBuying,
+      afterBuying: afterBuying ?? this.afterBuying,
+      highRiskOnly: highRiskOnly ?? this.highRiskOnly,
+      detectionRadiusMeters: detectionRadiusMeters ?? this.detectionRadiusMeters,
+    );
+  }
+
+  bool allows(StoreInfo store) => !highRiskOnly || store.risk >= 45;
+
+  Future<void> save() async {
+    final p = await SharedPreferences.getInstance();
+    await p.setBool('notifyOnEnter', onEnter);
+    await p.setBool('notifyOnExit', onExit);
+    await p.setBool('notifyBeforeBuying', beforeBuying);
+    await p.setBool('notifyAfterBuying', afterBuying);
+    await p.setBool('notifyHighRiskOnly', highRiskOnly);
+    await p.setDouble('detectionRadiusMeters', detectionRadiusMeters);
+  }
+
+  static Future<NotificationPrefs> load() async {
+    final p = await SharedPreferences.getInstance();
+    return NotificationPrefs(
+      onEnter: p.getBool('notifyOnEnter') ?? defaults.onEnter,
+      onExit: p.getBool('notifyOnExit') ?? defaults.onExit,
+      beforeBuying: p.getBool('notifyBeforeBuying') ?? defaults.beforeBuying,
+      afterBuying: p.getBool('notifyAfterBuying') ?? defaults.afterBuying,
+      highRiskOnly: p.getBool('notifyHighRiskOnly') ?? defaults.highRiskOnly,
+      detectionRadiusMeters: p.getDouble('detectionRadiusMeters') ?? defaults.detectionRadiusMeters,
+    );
+  }
+}
+
 class StoreInfo {
   final String name;
   final String category;
@@ -474,12 +532,12 @@ class StoreInfo {
 class RealStoreService {
   static bool get hasApiKey => googlePlacesApiKey.trim().isNotEmpty;
 
-  static Future<StoreInfo?> detectNearestStore(Position position) async {
+  static Future<StoreInfo?> detectNearestStore(Position position, {double radiusMeters = 25}) async {
     if (!hasApiKey) return null;
 
     final uri = Uri.https('maps.googleapis.com', '/maps/api/place/nearbysearch/json', {
       'location': '${position.latitude},${position.longitude}',
-      'radius': '120',
+      'radius': radiusMeters.round().clamp(10, 50).toString(),
       'type': 'store',
       'key': googlePlacesApiKey,
     });
@@ -510,7 +568,7 @@ class RealStoreService {
         }
       }
 
-      if (best == null || bestDistance > 120) return null;
+      if (best == null || bestDistance > radiusMeters) return null;
 
       final location = (best['geometry'] as Map<String, dynamic>)['location'] as Map<String, dynamic>;
       final name = (best['name'] ?? 'Nearby store').toString();
@@ -523,7 +581,7 @@ class RealStoreService {
         category: category,
         lat: (location['lat'] as num).toDouble(),
         lng: (location['lng'] as num).toDouble(),
-        radius: 120,
+        radius: radiusMeters,
         risk: risk,
       );
     } catch (_) {
@@ -586,67 +644,6 @@ class ChatMessage {
   const ChatMessage(this.sender, this.text, this.time);
 }
 
-
-class FounderPhotoScreen extends StatelessWidget {
-  final VoidCallback onEnter;
-
-  const FounderPhotoScreen({super.key, required this.onEnter});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.bgDeep,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: InteractiveViewer(
-                minScale: 1,
-                maxScale: 1,
-                child: Image.asset(
-                  'assets/images/founder_welcome.png',
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  height: double.infinity,
-                ),
-              ),
-            ),
-            Positioned.fill(
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  splashColor: Colors.transparent,
-                  highlightColor: Colors.transparent,
-                  onTap: onEnter,
-                ),
-              ),
-            ),
-            Positioned(
-              left: 28,
-              right: 28,
-              bottom: 54,
-              child: SizedBox(
-                height: 74,
-                child: FilledButton(
-                  onPressed: onEnter,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Colors.transparent,
-                    shadowColor: Colors.transparent,
-                    foregroundColor: Colors.transparent,
-                    disabledBackgroundColor: Colors.transparent,
-                    side: BorderSide.none,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                  ),
-                  child: const SizedBox.shrink(),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -855,8 +852,10 @@ class _MainScreenState extends State<MainScreen> {
   String currentStore = 'No store detected';
   BudgetData budget = BudgetData.empty;
   StoreDecision? decision;
+  NotificationPrefs notificationPrefs = NotificationPrefs.defaults;
   StreamSubscription<Position>? locationSub;
   String? lastNotifiedStore;
+  String? activeStoreName;
   final friendRequests = <FriendRequest>[const FriendRequest('Anna', 'Pending'), const FriendRequest('Marco', 'Pending')];
   final friends = <String>['Anna', 'Marco'];
   final messages = <ChatMessage>[
@@ -878,9 +877,11 @@ class _MainScreenState extends State<MainScreen> {
 
   Future<void> _load() async {
     final data = await BudgetData.load();
+    final prefs = await NotificationPrefs.load();
     if (!mounted) return;
     setState(() {
       budget = data;
+      notificationPrefs = prefs;
       loading = false;
     });
     unawaited(checkLocation());
@@ -907,26 +908,61 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  Future<void> handlePosition(Position position, {bool force = false}) async {
-    final store = await RealStoreService.detectNearestStore(position);
+  Future<void> updateNotificationPrefs(NotificationPrefs prefs) async {
+    await prefs.save();
     if (!mounted) return;
+    setState(() => notificationPrefs = prefs);
+  }
+
+  Future<void> notifyBeforeBuying() async {
+    final d = decision;
+    if (d == null || !notificationPrefs.beforeBuying || !notificationPrefs.allows(d.store)) return;
+    await NotificationService.show('Before you buy at ${d.store.name}', d.message(budget.dreamName));
+  }
+
+  Future<void> notifyAfterBuying() async {
+    final d = decision;
+    if (d == null || !notificationPrefs.afterBuying || !notificationPrefs.allows(d.store)) return;
+    await NotificationService.show('Purchase reflection', 'Check if this purchase still protects ${budget.dreamName.isEmpty ? 'your dream' : budget.dreamName}.');
+  }
+
+  Future<void> handlePosition(Position position, {bool force = false}) async {
+    final store = await RealStoreService.detectNearestStore(
+      position,
+      radiusMeters: notificationPrefs.detectionRadiusMeters,
+    );
+    if (!mounted) return;
+
     if (store == null) {
+      final leavingStore = activeStoreName;
+      if (leavingStore != null) {
+        activeStoreName = null;
+        lastNotifiedStore = null;
+        if (notificationPrefs.onExit) {
+          await NotificationService.show('Leaving $leavingStore', 'SpendGuard stopped tracking this store. Great job staying aware.');
+        }
+      }
       setState(() {
         gpsReady = true;
         currentStore = tr(context, 'noStore');
-        gpsStatus = 'Radar active: ${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}';
+        gpsStatus = 'Precise radar active: ${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}';
         decision = null;
       });
       return;
     }
+
     final d = decisionFor(store);
+    final isNewStore = activeStoreName != store.name;
+    activeStoreName = store.name;
+
     setState(() {
       gpsReady = true;
       currentStore = store.name;
-      gpsStatus = 'Inside ${store.name} • ${store.riskLabel}';
+      gpsStatus = 'Inside ${store.name} • ${store.riskLabel} • ${notificationPrefs.detectionRadiusMeters.toStringAsFixed(0)}m precision';
       decision = d;
     });
-    if (force || lastNotifiedStore != store.name) {
+
+    if ((force || isNewStore || lastNotifiedStore != store.name) && notificationPrefs.onEnter && notificationPrefs.allows(store)) {
       lastNotifiedStore = store.name;
       if (d.stop || store.risk >= 75) {
         HapticFeedback.heavyImpact();
@@ -1038,10 +1074,10 @@ class _MainScreenState extends State<MainScreen> {
     if (permission == LocationPermission.whileInUse) {
       setState(() => gpsStatus = 'Location works only while app is open. Enable Always for shop alerts.');
     }
-    final position = await Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.high));
+    final position = await Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.bestForNavigation));
     await handlePosition(position, force: true);
     locationSub ??= Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 35),
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.bestForNavigation, distanceFilter: 5),
     ).listen((p) => unawaited(handlePosition(p)));
   }
 
@@ -1101,11 +1137,11 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     if (loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
     final pages = [
-      HomeScreen(budget: budget, currentStore: currentStore, gpsStatus: gpsStatus, decision: decision, onGps: checkLocation, onSetup: _openSetup, onProtectMoney: protectMoney),
+      HomeScreen(budget: budget, currentStore: currentStore, gpsStatus: gpsStatus, decision: decision, onGps: checkLocation, onSetup: _openSetup, onProtectMoney: protectMoney, onBeforeBuy: notifyBeforeBuying, onAfterBuy: notifyAfterBuying),
       GpsScreen(budget: budget, currentStore: currentStore, gpsStatus: gpsStatus, gpsReady: gpsReady, decision: decision, onGps: checkLocation),
       const FriendsScreen(),
       GoalsScreen(budget: budget, onSetup: _openSetup),
-      SettingsScreen(budget: budget, onSetup: _openSetup),
+      SettingsScreen(budget: budget, notificationPrefs: notificationPrefs, onPrefsChanged: updateNotificationPrefs, onSetup: _openSetup),
     ];
     return Scaffold(
       body: pages[index],
@@ -1220,6 +1256,8 @@ class HomeScreen extends StatelessWidget {
   final VoidCallback onGps;
   final VoidCallback onSetup;
   final Future<void> Function(double, String) onProtectMoney;
+  final Future<void> Function() onBeforeBuy;
+  final Future<void> Function() onAfterBuy;
 
   const HomeScreen({
     super.key,
@@ -1230,6 +1268,8 @@ class HomeScreen extends StatelessWidget {
     required this.onGps,
     required this.onSetup,
     required this.onProtectMoney,
+    required this.onBeforeBuy,
+    required this.onAfterBuy,
   });
 
   @override
@@ -1287,7 +1327,10 @@ class HomeScreen extends StatelessWidget {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () {},
+                    onPressed: () async {
+                      await onBeforeBuy();
+                      await onAfterBuy();
+                    },
                     icon: const Icon(Icons.shopping_bag_rounded),
                     label: Text(tr(context, 'buyNow')),
                     style: OutlinedButton.styleFrom(
@@ -1651,7 +1694,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
   String? selectedFriendUid;
   String? selectedFriendName;
 
-  User? get user => FirebaseAuth.instance.currentUser;
+  User? get user => firebaseReady ? FirebaseAuth.instance.currentUser : null;
   String get uid => user?.uid ?? 'offline';
   String get shortId => uid.length <= 8 ? uid : uid.substring(0, 8);
 
@@ -1684,7 +1727,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
   }
 
   Future<void> _ensureProfile() async {
-    if (user == null) return;
+    if (!firebaseReady || user == null) return;
     final doc = await usersRef.doc(uid).get();
     final existingName = (doc.data()?['displayName'] ?? '').toString();
     if (existingName.isNotEmpty) {
@@ -2011,6 +2054,19 @@ class _FriendsScreenState extends State<FriendsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!firebaseReady) {
+      return AppBackground(
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.all(20),
+            children: const [
+              Header(title: 'Friends', subtitle: 'Firebase is starting. Please reopen this screen in a moment.'),
+            ],
+          ),
+        ),
+      );
+    }
+
     return AppBackground(
       child: SafeArea(
         child: ListView(
@@ -2074,8 +2130,19 @@ class GoalsScreen extends StatelessWidget {
 
 class SettingsScreen extends StatelessWidget {
   final BudgetData budget;
+  final NotificationPrefs notificationPrefs;
+  final Future<void> Function(NotificationPrefs) onPrefsChanged;
   final VoidCallback onSetup;
-  const SettingsScreen({super.key, required this.budget, required this.onSetup});
+
+  const SettingsScreen({
+    super.key,
+    required this.budget,
+    required this.notificationPrefs,
+    required this.onPrefsChanged,
+    required this.onSetup,
+  });
+
+  Future<void> _set(NotificationPrefs value) => onPrefsChanged(value);
 
   @override
   Widget build(BuildContext context) {
@@ -2083,7 +2150,7 @@ class SettingsScreen extends StatelessWidget {
     return AppBackground(
       child: SafeArea(
         child: ListView(padding: const EdgeInsets.all(20), children: [
-          Header(title: tr(context, 'settings'), subtitle: 'Language, budget, notifications and app information.'),
+          Header(title: tr(context, 'settings'), subtitle: 'Language, budget, precise GPS and smart alert controls.'),
           const SizedBox(height: 16),
           PremiumCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(tr(context, 'language'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
@@ -2094,9 +2161,92 @@ class SettingsScreen extends StatelessWidget {
             }).toList()),
           ])),
           const SizedBox(height: 14),
-          PremiumCard(child: ListTile(contentPadding: EdgeInsets.zero, leading: const Icon(Icons.tune_rounded), title: Text(tr(context, 'budget')), subtitle: Text('Income €${budget.income.toStringAsFixed(0)} • Expenses €${budget.fixedExpenses.toStringAsFixed(0)}'), trailing: const Icon(Icons.chevron_right_rounded), onTap: onSetup)),
+          PremiumCard(child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.tune_rounded),
+            title: Text(tr(context, 'budget')),
+            subtitle: Text('Income €${budget.income.toStringAsFixed(0)} • Expenses €${budget.fixedExpenses.toStringAsFixed(0)}'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: onSetup,
+          )),
           const SizedBox(height: 14),
-          PremiumCard(child: SwitchListTile(contentPadding: EdgeInsets.zero, value: true, onChanged: (_) {}, title: Text(tr(context, 'notifications')), subtitle: const Text('GPS alerts when you enter a store', style: TextStyle(color: AppColors.muted)))),
+          PremiumCard(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Icon(Icons.notifications_active_rounded, color: AppColors.teal),
+                const SizedBox(width: 10),
+                Text(tr(context, 'notifications'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+              ]),
+              const SizedBox(height: 8),
+              const Text('Choose exactly when SpendGuard should alert you.', style: TextStyle(color: AppColors.muted, height: 1.35)),
+              const SizedBox(height: 10),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: notificationPrefs.onEnter,
+                onChanged: (v) => _set(notificationPrefs.copyWith(onEnter: v)),
+                title: Text(tr(context, 'enterStoreAlert')),
+                subtitle: const Text('Alert when you actually enter a detected store.', style: TextStyle(color: AppColors.muted)),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: notificationPrefs.onExit,
+                onChanged: (v) => _set(notificationPrefs.copyWith(onExit: v)),
+                title: Text(tr(context, 'exitStoreAlert')),
+                subtitle: const Text('Alert when you leave the store area.', style: TextStyle(color: AppColors.muted)),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: notificationPrefs.beforeBuying,
+                onChanged: (v) => _set(notificationPrefs.copyWith(beforeBuying: v)),
+                title: Text(tr(context, 'beforeBuyAlert')),
+                subtitle: const Text('Used when you press “Buy anyway”. Bank detection comes later.', style: TextStyle(color: AppColors.muted)),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: notificationPrefs.afterBuying,
+                onChanged: (v) => _set(notificationPrefs.copyWith(afterBuying: v)),
+                title: Text(tr(context, 'afterBuyAlert')),
+                subtitle: const Text('Reflection alert after choosing to buy anyway.', style: TextStyle(color: AppColors.muted)),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: notificationPrefs.highRiskOnly,
+                onChanged: (v) => _set(notificationPrefs.copyWith(highRiskOnly: v)),
+                title: Text(tr(context, 'highRiskOnly')),
+                subtitle: const Text('Only notify for caution/danger stores.', style: TextStyle(color: AppColors.muted)),
+              ),
+            ]),
+          ),
+          const SizedBox(height: 14),
+          PremiumCard(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Icon(Icons.gps_fixed_rounded, color: AppColors.green),
+                const SizedBox(width: 10),
+                Text(tr(context, 'gpsSensitivity'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+              ]),
+              const SizedBox(height: 8),
+              Text(
+                'Current detection field: ${notificationPrefs.detectionRadiusMeters.toStringAsFixed(0)} meters. Lower means alerts closer to the shop entrance.',
+                style: const TextStyle(color: AppColors.muted, height: 1.35),
+              ),
+              Slider(
+                value: notificationPrefs.detectionRadiusMeters.clamp(10, 50),
+                min: 10,
+                max: 50,
+                divisions: 4,
+                label: '${notificationPrefs.detectionRadiusMeters.toStringAsFixed(0)}m',
+                onChanged: (v) => _set(notificationPrefs.copyWith(detectionRadiusMeters: v)),
+              ),
+              const Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Ultra precise', style: TextStyle(color: AppColors.muted, fontSize: 12)),
+                  Text('Relaxed', style: TextStyle(color: AppColors.muted, fontSize: 12)),
+                ],
+              ),
+            ]),
+          ),
           const SizedBox(height: 14),
           PremiumCard(child: Text(tr(context, 'about'), style: const TextStyle(color: AppColors.muted, height: 1.4))),
         ]),
