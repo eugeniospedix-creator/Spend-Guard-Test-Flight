@@ -37,3 +37,5 @@ workflows:
     artifacts:
       - build/**/outputs/**/*.apk
       - build/ios/ipa/*.ipa
+      - build/ios/archive/*.xcarchive
+      - build/ios/archive/Runner.xcarchive/**/*
