@@ -9,7 +9,7 @@
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 
 	<key>CFBundleDisplayName</key>
-	<string>SpendGuard</string>
+	<string>Spendguard</string>
 
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
@@ -38,10 +38,29 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>SpendGuard uses your location to detect when you enter or leave shops and send spending alerts.</string>
+
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>SpendGuard uses your location to detect when you enter or leave shops and send spending alerts.</string>
+
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>SpendGuard uses your location to detect shops and show spending alerts.</string>
+
+	<key>NSUserNotificationsUsageDescription</key>
+	<string>SpendGuard sends smart spending alerts when you enter or leave shops.</string>
+
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>SpendGuard may access your photo library only if you choose to import documents or receipts.</string>
+
+	<key>NSCameraUsageDescription</key>
+	<string>SpendGuard may use the camera only if you choose to scan receipts or documents.</string>
+
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>
+
 		<key>UISceneConfigurations</key>
 		<dict>
 			<key>UIWindowSceneSessionRoleApplication</key>
@@ -49,10 +68,13 @@
 				<dict>
 					<key>UISceneClassName</key>
 					<string>UIWindowScene</string>
+
 					<key>UISceneConfigurationName</key>
 					<string>flutter</string>
+
 					<key>UISceneDelegateClassName</key>
 					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+
 					<key>UISceneStoryboardFile</key>
 					<string>Main</string>
 				</dict>
@@ -62,6 +84,13 @@
 
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+		<string>fetch</string>
+		<string>remote-notification</string>
+	</array>
 
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
@@ -82,23 +111,6 @@
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-
-	<!-- SpendGuard Location Permissions -->
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>SpendGuard uses your location to detect nearby stores and provide personalised budget insights based on your spending goals.</string>
-
-	<key>NSLocationAlwaysUsageDescription</key>
-	<string>SpendGuard needs your location even when the app is not open to alert you when you enter supported stores.</string>
-
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>SpendGuard uses your location in the background to notify you about spending limits and budget alerts when entering supported stores.</string>
-
-	<!-- Background Modes -->
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>location</string>
-		<string>remote-notification</string>
 	</array>
 
 </dict>
