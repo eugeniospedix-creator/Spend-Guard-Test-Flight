@@ -728,6 +728,15 @@ class NativeGeofenceService {
     }
   }
 
+  static Future<void> startProLocationMode() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
+    try {
+      await _channel.invokeMethod('startProLocationMode');
+    } catch (e) {
+      debugPrint('SpendGuard Pro Location Mode failed: $e');
+    }
+  }
+
   static Future<void> startMonitoringStore(StoreInfo store) async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return;
     try {
@@ -2168,7 +2177,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     unawaited(NotificationService.requestPermissions());
-    unawaited(NativeGeofenceService.requestAlwaysPermission());
+    unawaited(NativeGeofenceService.startProLocationMode());
     _load();
   }
 
@@ -2372,7 +2381,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   Future<void> handlePosition(Position position, {bool force = false}) async {
-    final store = await RealStoreService.detectNearestStore(position, searchRadiusMeters: 75);
+    final store = await RealStoreService.detectNearestStore(position, searchRadiusMeters: 160);
     if (!mounted) return;
 
     if (store == null) {
@@ -2394,10 +2403,16 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     // Google Places may find shops nearby, but SpendGuard only says "inside" after
     // the phone is very close to the shop point. Stream updates require confirmation
     // to avoid false entry alerts while walking past or sitting at home nearby.
-    final accuracyBoost = position.accuracy <= 10 ? 2.0 : position.accuracy <= 25 ? 4.0 : 0.0;
-    final entryRadius = min(34.0, store.triggerRadiusMeters + accuracyBoost);
-    final exitRadius = entryRadius + 14.0;
-    final gpsAccurateEnough = position.accuracy <= 45;
+    final accuracyBoost = position.accuracy <= 10
+        ? 8.0
+        : position.accuracy <= 25
+            ? 12.0
+            : position.accuracy <= 45
+                ? 18.0
+                : 0.0;
+    final entryRadius = min(55.0, max(35.0, store.triggerRadiusMeters + accuracyBoost));
+    final exitRadius = entryRadius + 35.0;
+    final gpsAccurateEnough = position.accuracy <= 65;
     final insideCandidate = gpsAccurateEnough && store.distanceMeters <= entryRadius;
     final isOutsideExitZone = !gpsAccurateEnough || store.distanceMeters > exitRadius;
     final d = decisionFor(store);
@@ -2427,7 +2442,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         pendingInsideCount = 1;
       }
 
-      final confirmedInside = force || pendingInsideCount >= 2;
+      final confirmedInside = force || pendingInsideCount >= 1;
       if (!confirmedInside) {
         if (!mounted) return;
         setState(() {
@@ -4535,6 +4550,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 14),
             PremiumCard(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: Colors.white.withOpacity(0.10)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Pro Mode • Advanced Store Alerts',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: AppColors.text),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        AppLanguageScope.of(context).language == AppLanguage.it
+                            ? 'Per ricevere notifiche di entrata e uscita anche quando SpendGuard è chiusa o il telefono è bloccato, attiva Localizzazione Sempre.'
+                            : 'To receive shop entry and exit notifications even when SpendGuard is closed or your phone is locked, enable Always Location.',
+                        style: const TextStyle(color: AppColors.muted, height: 1.35),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        AppLanguageScope.of(context).language == AppLanguage.it
+                            ? 'Vai su: Impostazioni iPhone > SpendGuard > Posizione > Sempre. Lascia attive anche Notifiche, Banner, Suoni e Schermo Bloccato.'
+                            : 'Go to: iPhone Settings > SpendGuard > Location > Always. Also keep Notifications, Banners, Sounds and Lock Screen enabled.',
+                        style: const TextStyle(color: AppColors.text, height: 1.35, fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                ),
+
                 Text(tr(context, 'privacy'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 8),
                 const Text('SpendGuard stores your budget, goals, wallet, CSV imports and visit history on this device. CSV import is read-only and never moves money.', style: TextStyle(color: AppColors.muted, height: 1.35)),

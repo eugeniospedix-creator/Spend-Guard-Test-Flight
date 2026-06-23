@@ -18,7 +18,10 @@ import UserNotifications
     locationManager.allowsBackgroundLocationUpdates = true
     locationManager.pausesLocationUpdatesAutomatically = false
 
-    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in }
+    UNUserNotificationCenter.current().delegate = self
+    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
+      NSLog("SpendGuard notification permission granted: \(granted), error: \(String(describing: error))")
+    }
 
     if let controller = window?.rootViewController as? FlutterViewController {
       let channel = FlutterMethodChannel(name: channelName, binaryMessenger: controller.binaryMessenger)
@@ -28,6 +31,10 @@ import UserNotifications
         switch call.method {
         case "requestAlwaysPermission":
           self.requestAlwaysPermission()
+          result(true)
+
+        case "startProLocationMode":
+          self.startProLocationMode()
           result(true)
 
         case "startMonitoringStore":
@@ -52,6 +59,19 @@ import UserNotifications
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
+
+  override func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    willPresent notification: UNNotification,
+    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+  ) {
+    if #available(iOS 14.0, *) {
+      completionHandler([.banner, .list, .sound, .badge])
+    } else {
+      completionHandler([.alert, .sound, .badge])
+    }
+  }
+
   private func requestAlwaysPermission() {
     let status = locationManager.authorizationStatus
     if status == .notDetermined {
@@ -59,6 +79,25 @@ import UserNotifications
     } else if status == .authorizedWhenInUse {
       locationManager.requestAlwaysAuthorization()
     }
+  }
+
+
+  private func startProLocationMode() {
+    requestAlwaysPermission()
+
+    locationManager.desiredAccuracy = kCLLocationAccuracyBest
+    locationManager.distanceFilter = 10
+    locationManager.allowsBackgroundLocationUpdates = true
+    locationManager.pausesLocationUpdatesAutomatically = false
+
+    if CLLocationManager.significantLocationChangeMonitoringAvailable() {
+      locationManager.startMonitoringSignificantLocationChanges()
+    }
+
+    locationManager.startMonitoringVisits()
+    locationManager.startUpdatingLocation()
+
+    NSLog("SpendGuard Pro Location Mode started")
   }
 
   private func startMonitoringStore(name: String, lat: Double, lng: Double, radius: Double) {
@@ -93,6 +132,30 @@ import UserNotifications
 
     locationManager.startMonitoring(for: region)
     locationManager.requestState(for: region)
+  }
+
+
+  func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+    let status = manager.authorizationStatus
+    NSLog("SpendGuard location authorization changed: \(status.rawValue)")
+
+    if status == .authorizedAlways {
+      manager.allowsBackgroundLocationUpdates = true
+      manager.pausesLocationUpdatesAutomatically = false
+      if CLLocationManager.significantLocationChangeMonitoringAvailable() {
+        manager.startMonitoringSignificantLocationChanges()
+      }
+      manager.startMonitoringVisits()
+    }
+  }
+
+  func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+    guard let last = locations.last else { return }
+    NSLog("SpendGuard native location update: \(last.coordinate.latitude), \(last.coordinate.longitude), accuracy \(last.horizontalAccuracy)")
+  }
+
+  func locationManager(_ manager: CLLocationManager, didVisit visit: CLVisit) {
+    NSLog("SpendGuard visit detected: \(visit.coordinate.latitude), \(visit.coordinate.longitude)")
   }
 
   func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
