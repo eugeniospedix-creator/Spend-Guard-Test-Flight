@@ -745,7 +745,7 @@ class NativeGeofenceService {
         'category': store.category,
         'lat': store.lat,
         'lng': store.lng,
-        'radius': store.triggerRadiusMeters.clamp(35.0, 120.0),
+        'radius': store.triggerRadiusMeters.clamp(25.0, 60.0),
       });
     } catch (e) {
       debugPrint('SpendGuard native geofence start failed: $e');

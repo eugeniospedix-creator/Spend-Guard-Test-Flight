@@ -112,7 +112,7 @@ import UserNotifications
 
     let identifier = "spendguard_store_\(safeName)"
     let center = CLLocationCoordinate2D(latitude: lat, longitude: lng)
-    let clampedRadius = min(max(radius, 35.0), 120.0)
+    let clampedRadius = min(max(radius, 25.0), 60.0)
     let region = CLCircularRegion(center: center, radius: clampedRadius, identifier: identifier)
     region.notifyOnEntry = true
     region.notifyOnExit = true
@@ -160,7 +160,13 @@ import UserNotifications
 
   func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
     guard region.identifier.hasPrefix("spendguard_store_") else { return }
+
     let storeName = displayName(from: region.identifier)
+    let defaults = UserDefaults.standard
+
+    defaults.set(storeName, forKey: "SpendGuardActiveStoreName")
+    defaults.set(region.identifier, forKey: "SpendGuardActiveStoreId")
+
     sendSpendGuardNotification(
       title: "SpendGuard • \(storeName)",
       body: "You are inside \(storeName). Know before you buy.",
@@ -170,12 +176,24 @@ import UserNotifications
 
   func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
     guard region.identifier.hasPrefix("spendguard_store_") else { return }
-    let storeName = displayName(from: region.identifier)
+
+    let defaults = UserDefaults.standard
+    let activeId = defaults.string(forKey: "SpendGuardActiveStoreId")
+    let activeName = defaults.string(forKey: "SpendGuardActiveStoreName") ?? displayName(from: region.identifier)
+
+    if activeId != nil && activeId != region.identifier {
+      NSLog("SpendGuard ignored exit for non-active store: \(region.identifier)")
+      return
+    }
+
     sendSpendGuardNotification(
       title: "SpendGuard • Exit",
-      body: "You left \(storeName). Your future is still protected.",
+      body: "You left \(activeName). Your future is still protected.",
       key: "native_exit_\(region.identifier)"
     )
+
+    defaults.removeObject(forKey: "SpendGuardActiveStoreName")
+    defaults.removeObject(forKey: "SpendGuardActiveStoreId")
   }
 
   func locationManager(_ manager: CLLocationManager, didDetermineState state: CLRegionState, for region: CLRegion) {
