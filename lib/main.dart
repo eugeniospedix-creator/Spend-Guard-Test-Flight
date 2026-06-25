@@ -2429,199 +2429,51 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   Future<void> handlePosition(Position position, {bool force = false}) async {
-    final engineDecision = await gpsEngine.evaluatePosition(position);
+    final result = await gpsEngine.evaluate(position);
     if (!mounted) return;
 
-    NotificationService.lastDebug = 'GPS Engine V2 • ${engineDecision.debugMessage}';
+    final candidate = result.candidate;
+    StoreDecision? nextDecision;
+    String nextStore = tr(context, 'noStore');
 
-    final speedMps = position.speed.isFinite ? position.speed : 0.0;
-    final speedKmh = speedMps * 3.6;
-    final accuracy = position.accuracy;
+    if (candidate != null) {
+      final storeInfo = StoreInfo(
+        name: candidate.name,
+        category: candidate.category,
+        lat: candidate.latitude,
+        lng: candidate.longitude,
+        distanceMeters: candidate.distanceMeters,
+        risk: candidate.risk,
+      );
 
-    if (!force && speedMps > 3.0) {
-      pendingInsideStore = null;
-      pendingInsideCount = 0;
-      pendingInsideSince = null;
-      recentGpsPoints.clear();
+      nextDecision = decisionFor(storeInfo);
 
-      final now = DateTime.now();
-      final shouldUpdateDebug = lastMovementBlockedAt == null || now.difference(lastMovementBlockedAt!).inSeconds >= 8;
-      if (shouldUpdateDebug && mounted) {
-        lastMovementBlockedAt = now;
-        setState(() {
-          gpsReady = true;
-          currentStore = tr(context, 'noStore');
-          gpsStatus = 'Movement filter active • ${speedKmh.toStringAsFixed(0)} km/h • ignoring shops while driving';
-          decision = null;
-        });
+      if (result.shouldShowStoreInUi) {
+        activeStoreName = candidate.name;
+        nextStore = candidate.name;
       }
-      return;
+    } else {
+      activeStoreName = null;
     }
-
-    if (!force && accuracy > 25) {
-      pendingInsideStore = null;
-      pendingInsideCount = 0;
-      pendingInsideSince = null;
-      recentGpsPoints.clear();
-
-      if (mounted) {
-        setState(() {
-          gpsReady = true;
-          currentStore = tr(context, 'noStore');
-          gpsStatus = 'GPS not accurate enough for shop entry • accuracy ${accuracy.toStringAsFixed(0)}m / max 25m • wait near the entrance';
-          decision = null;
-        });
-      }
-      return;
-    }
-
-    _rememberGpsPoint(position);
-    final gpsSpread = _gpsSpreadMeters();
-    final stableGpsCluster = force || _hasStableGpsCluster();
-
-    if (!stableGpsCluster) {
-      if (mounted) {
-        setState(() {
-          gpsReady = true;
-          currentStore = tr(context, 'noStore');
-          gpsStatus = 'GPS settling • ${recentGpsPoints.length}/4 points • spread ${gpsSpread.toStringAsFixed(0)}m / max 12m • stand still at the entrance';
-          decision = null;
-        });
-      }
-      return;
-    }
-
-    final store = await RealStoreService.detectNearestStore(position, searchRadiusMeters: 120);
-    if (!mounted) return;
-
-    if (store == null) {
-      final leavingStore = activeStoreName;
-      if (leavingStore != null) {
-        activeStoreName = null;
-        pendingInsideStore = null;
-        pendingInsideCount = 0;
-        pendingInsideSince = null;
-        NotificationService.lastDebug = 'Flutter cleared active store; native iOS geofence owns exit alerts.';
-      }
-      if (!mounted) return;
-      setState(() {
-        gpsReady = true;
-        currentStore = tr(context, 'noStore');
-        gpsStatus = 'Outside stores • accuracy ${position.accuracy.toStringAsFixed(0)}m • ${RealStoreService.lastDebug}';
-        decision = null;
-      });
-      return;
-    }
-
-    // Build 23 Notification Diagnostic Mode:
-    // Google Places may find shops nearby, but SpendGuard only says "inside" after
-    // the phone is very close to the shop point. Stream updates require confirmation
-    // to avoid false entry alerts while walking past or sitting at home nearby.
-    final accuracyBoost = position.accuracy <= 10
-        ? 8.0
-        : position.accuracy <= 25
-            ? 12.0
-            : position.accuracy <= 45
-                ? 18.0
-                : 0.0;
-    final entryRadius = min(15.0, max(10.0, store.triggerRadiusMeters));
-    final exitRadius = entryRadius + 28.0;
-    final gpsAccurateEnough = position.accuracy <= 25;
-    final insideCandidate = gpsAccurateEnough && store.distanceMeters <= entryRadius;
-    final isOutsideExitZone = !gpsAccurateEnough || store.distanceMeters > exitRadius;
-    final d = decisionFor(store);
-
-    if (!insideCandidate) {
-      pendingInsideStore = null;
-      pendingInsideCount = 0;
-      pendingInsideSince = null;
-      final leavingStore = activeStoreName;
-      if (leavingStore != null && (isOutsideExitZone || leavingStore != store.name)) {
-        activeStoreName = null;
-        pendingInsideStore = null;
-        pendingInsideCount = 0;
-        pendingInsideSince = null;
-        NotificationService.lastDebug = 'Flutter outside candidate; native iOS geofence owns exit alerts.';
-      }
-      if (!mounted) return;
-      setState(() {
-        gpsReady = true;
-        currentStore = tr(context, 'noStore');
-        gpsStatus = 'Outside stores • closest ${store.name} ${store.distanceMeters.toStringAsFixed(0)}m / enter ${entryRadius.toStringAsFixed(0)}m • accuracy ${position.accuracy.toStringAsFixed(0)}m • ${RealStoreService.lastDebug}';
-        decision = null;
-      });
-      return;
-    }
-
-    if (activeStoreName != store.name) {
-      if (pendingInsideStore == store.name) {
-        pendingInsideCount += 1;
-      } else {
-        pendingInsideStore = store.name;
-        pendingInsideCount = 1;
-        pendingInsideSince = DateTime.now();
-      }
-
-      pendingInsideSince ??= DateTime.now();
-      final dwellSeconds = DateTime.now().difference(pendingInsideSince!).inSeconds;
-      final confirmedInside = force || (stableGpsCluster && pendingInsideCount >= 4 && dwellSeconds >= 20);
-      if (!confirmedInside) {
-        if (!mounted) return;
-        setState(() {
-          gpsReady = true;
-          currentStore = tr(context, 'noStore');
-          gpsStatus = 'Confirming real entry • ${store.name} • ${pendingInsideCount}/4 • ${dwellSeconds}s/20s • ${store.distanceMeters.toStringAsFixed(0)}m / enter ${entryRadius.toStringAsFixed(0)}m • accuracy ${position.accuracy.toStringAsFixed(0)}m';
-          decision = null;
-        });
-        return;
-      }
-    }
-
-    final isNewStore = activeStoreName != store.name;
-    activeStoreName = store.name;
-    unawaited(NativeGeofenceService.startMonitoringStore(store));
-    pendingInsideStore = null;
-    pendingInsideCount = 0;
-    pendingInsideSince = null;
 
     setState(() {
       gpsReady = true;
-      currentStore = store.name;
-      gpsStatus = 'Native alert armed • ${store.name} • ${store.distanceMeters.toStringAsFixed(0)}m / arm ${entryRadius.toStringAsFixed(0)}m • accuracy ${position.accuracy.toStringAsFixed(0)}m • iOS now owns entry/exit';
-      decision = d;
+      currentStore = nextStore;
+      gpsStatus = 'GPS Engine V2 • ${result.debugMessage}';
+      decision = nextDecision;
     });
 
-    final updatedVisits = await StoreVisit.add(StoreVisit(
-      storeName: store.name,
-      category: store.category,
-      safeAmount: d.safeAmount,
-      distanceMeters: store.distanceMeters,
-      time: DateTime.now(),
-    ));
-    if (mounted) setState(() => visitHistory = updatedVisits);
+    if (result.shouldSaveVisit && candidate != null && nextDecision != null) {
+      final updatedVisits = await StoreVisit.add(StoreVisit(
+        storeName: candidate.name,
+        category: candidate.category,
+        safeAmount: nextDecision.safeAmount,
+        distanceMeters: candidate.distanceMeters,
+        time: DateTime.now(),
+      ));
 
-    final now = DateTime.now();
-    final cooldownPassed = lastNotificationAt == null || now.difference(lastNotificationAt!).inMinutes >= 4;
-    final shouldSendEnterAlert = false; // Build 31: entry alerts are native iOS only.
-
-    if (!notificationPrefs.onEnter && mounted) {
-      setState(() => gpsStatus = 'Inside ${store.name} • entry alerts are OFF in Settings');
-      return;
-    }
-
-    if (shouldSendEnterAlert) {
-      lastNotifiedStore = store.name;
-      lastNotificationAt = now;
-      HapticFeedback.selectionClick();
-      final sent = await _sendSmartNotification(
-        _notificationKey('entry', store.name),
-        'SpendGuard • ${store.name}',
-        d.message(budget, AppLanguageScope.of(context).language),
-      );
       if (mounted) {
-        setState(() {
-          gpsStatus = 'Flutter entry notification disabled • native iOS geofence owns ${store.name}';
-        });
+        setState(() => visitHistory = updatedVisits);
       }
     }
   }

@@ -24,6 +24,17 @@ class GpsEngine {
 
   StoreCandidate? get armedCandidate => _armedCandidate;
 
+  Future<GpsEngineResult> evaluate(Position position) async {
+    final decision = await evaluatePosition(position);
+
+    return GpsEngineResult(
+      decision: decision,
+      shouldSaveVisit: decision.state == GeofenceArmState.armed && decision.candidate != null,
+      shouldShowStoreInUi: decision.state == GeofenceArmState.armed && decision.candidate != null,
+      shouldUseNativeNotificationsOnly: true,
+    );
+  }
+
   Future<GpsEngineDecision> evaluatePosition(Position position) async {
     final reading = GpsReading.fromPosition(position);
     movementDetector.add(reading);

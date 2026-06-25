@@ -51,6 +51,7 @@ class StoreCandidate {
   final double latitude;
   final double longitude;
   final double distanceMeters;
+  final int risk;
   final double nativeGeofenceRadiusMeters;
 
   const StoreCandidate({
@@ -59,6 +60,7 @@ class StoreCandidate {
     required this.latitude,
     required this.longitude,
     required this.distanceMeters,
+    this.risk = 45,
     this.nativeGeofenceRadiusMeters = 15.0,
   });
 }
@@ -91,4 +93,23 @@ class GpsEngineDecision {
     this.candidate,
     this.confidence,
   });
+}
+
+
+class GpsEngineResult {
+  final GpsEngineDecision decision;
+  final bool shouldSaveVisit;
+  final bool shouldShowStoreInUi;
+  final bool shouldUseNativeNotificationsOnly;
+
+  const GpsEngineResult({
+    required this.decision,
+    this.shouldSaveVisit = false,
+    this.shouldShowStoreInUi = false,
+    this.shouldUseNativeNotificationsOnly = true,
+  });
+
+  StoreCandidate? get candidate => decision.candidate;
+  ConfidenceResult? get confidence => decision.confidence;
+  String get debugMessage => decision.debugMessage;
 }

@@ -34,6 +34,7 @@ class LegacyStoreLookup implements StoreLookup {
         latitude: store.lat,
         longitude: store.lng,
         distanceMeters: store.distanceMeters,
+        risk: store.risk,
         nativeGeofenceRadiusMeters: 15,
       ),
     ];
