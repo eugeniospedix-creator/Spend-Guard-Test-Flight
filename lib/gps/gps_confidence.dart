@@ -2,7 +2,7 @@ import 'gps_models.dart';
 import 'movement_detector.dart';
 
 class GpsConfidenceEngine {
-  static const int armThreshold = 90;
+  static const int armThreshold = 75;
 
   ConfidenceResult evaluate({
     required GpsReading reading,
