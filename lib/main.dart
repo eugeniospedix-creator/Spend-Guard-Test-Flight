@@ -11,6 +11,7 @@ import 'gps/geofence_bridge.dart';
 import 'gps/gps_confidence.dart';
 import 'gps/gps_engine.dart';
 import 'gps/gps_models.dart';
+import 'gps/osm_store_provider.dart';
 import 'gps/legacy_store_lookup.dart';
 import 'gps/movement_detector.dart';
 import 'gps/store_detector.dart';
@@ -27,7 +28,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 // Calm opening, natural environment-aware colours, soft card lighting,
 // compact Dream Vault, primary goal selector, bilingual Help.
 
-const String googlePlacesApiKey = 'AIzaSyCxvHl7eUjN3GLRWmk45tdXJboXLcSxEFo';
 const String spendGuardAppIcon = 'assets/images/spendguard_app_icon.png';
 
 void main() async {
@@ -1631,7 +1631,6 @@ class StoreVisual {
 }
 
 class RealStoreService {
-  static bool get hasApiKey => googlePlacesApiKey.trim().isNotEmpty;
   static String lastDebug = 'Places not checked yet';
 
   static const Set<String> _shoppingTypes = {
@@ -1671,128 +1670,57 @@ class RealStoreService {
   };
 
   static Future<List<Map<String, dynamic>>> _nearbyPlaces(Position position, Map<String, String> extra, {required int radius}) async {
-    final uri = Uri.https('maps.googleapis.com', '/maps/api/place/nearbysearch/json', {
-      'location': '${position.latitude},${position.longitude}',
-      'radius': radius.toString(),
-      ...extra,
-      'key': googlePlacesApiKey,
-    });
+    final lat = position.latitude;
+    final lng = position.longitude;
 
-    final response = await http.get(uri).timeout(const Duration(seconds: 8));
+    final query = """
+[out:json][timeout:8];
+(
+  node["shop"](around:$radius,$lat,$lng);
+  way["shop"](around:$radius,$lat,$lng);
+  relation["shop"](around:$radius,$lat,$lng);
+
+  node["amenity"~"cafe|restaurant|fast_food|pharmacy|fuel"](around:$radius,$lat,$lng);
+  way["amenity"~"cafe|restaurant|fast_food|pharmacy|fuel"](around:$radius,$lat,$lng);
+  relation["amenity"~"cafe|restaurant|fast_food|pharmacy|fuel"](around:$radius,$lat,$lng);
+);
+out center tags;
+""";
+
+    final uri = Uri.https('overpass-api.de', '/api/interpreter');
+
+    final response = await http.post(uri, body: {'data': query}).timeout(const Duration(seconds: 10));
     if (response.statusCode != 200) {
-      lastDebug = 'Places HTTP ${response.statusCode}';
+      lastDebug = 'OSM HTTP ${response.statusCode}';
       return const [];
     }
 
     final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-    final status = (decoded['status'] ?? 'UNKNOWN').toString();
-    final error = (decoded['error_message'] ?? '').toString();
-    final results = ((decoded['results'] as List?) ?? []).whereType<Map<String, dynamic>>().toList();
-
-    if (status != 'OK' && status != 'ZERO_RESULTS') {
-      lastDebug = error.isEmpty ? 'Places status: $status' : 'Places status: $status • $error';
-      debugPrint('SpendGuard Places error: $lastDebug');
-      return const [];
-    }
-
-    return results;
+    return ((decoded['elements'] as List?) ?? []).whereType<Map<String, dynamic>>().toList();
   }
 
   static Future<StoreInfo?> detectNearestStore(Position position, {double searchRadiusMeters = 95}) async {
-    if (!hasApiKey) {
-      lastDebug = 'Missing Google Places API key';
+    final candidate = await OsmStoreProvider.detectNearestStore(
+      position,
+      radiusMeters: searchRadiusMeters.round(),
+    );
+
+    lastDebug = OsmStoreProvider.lastDebug;
+
+    if (candidate == null) {
       return null;
     }
 
-    final radius = searchRadiusMeters.round().clamp(45, 110);
-    final all = <String, Map<String, dynamic>>{};
+    final risk = _riskForCategory(candidate.category, candidate.name);
 
-    Future<void> addResults(Map<String, String> params) async {
-      final results = await _nearbyPlaces(position, params, radius: radius);
-      for (final place in results) {
-        final placeId = (place['place_id'] ?? place['name'] ?? DateTime.now().microsecondsSinceEpoch).toString();
-        all[placeId] = place;
-      }
-    }
-
-    try {
-      // Multiple small searches work much better than one giant keyword query.
-      await addResults({'keyword': 'supermarket grocery shop store'});
-      await addResults({'keyword': 'tesco lidl aldi spar centra supervalu dunnes ikea maxol circle k'});
-      await addResults({'type': 'store'});
-      await addResults({'type': 'supermarket'});
-      await addResults({'type': 'shopping_mall'});
-      await addResults({'type': 'gas_station'});
-      await addResults({'type': 'cafe'});
-      await addResults({'type': 'restaurant'});
-      await addResults({'type': 'pharmacy'});
-
-      if (all.isEmpty) {
-        lastDebug = 'No Places results within ${radius}m';
-        return null;
-      }
-
-      Map<String, dynamic>? best;
-      double bestDistance = double.infinity;
-      double bestScore = double.infinity;
-      var considered = 0;
-
-      for (final place in all.values) {
-        final location = (place['geometry'] as Map<String, dynamic>?)?['location'] as Map<String, dynamic>?;
-        if (location == null) continue;
-
-        final name = (place['name'] ?? '').toString();
-        if (name.trim().isEmpty) continue;
-
-        final types = ((place['types'] as List?) ?? []).map((e) => e.toString()).toSet();
-        if (types.intersection(_ignoreTypes).isNotEmpty && types.intersection(_shoppingTypes).isEmpty && !_looksLikeKnownShop(name)) continue;
-        if (types.intersection(_shoppingTypes).isEmpty && !_looksLikeKnownShop(name)) continue;
-
-        final lat = (location['lat'] as num).toDouble();
-        final lng = (location['lng'] as num).toDouble();
-        final distance = Geolocator.distanceBetween(position.latitude, position.longitude, lat, lng);
-        if (distance > radius) continue;
-        considered++;
-
-        var score = distance;
-        if (_looksLikeKnownShop(name)) score -= 45;
-        if (types.contains('supermarket') || types.contains('grocery_or_supermarket')) score -= 18;
-        if (types.contains('gas_station')) score -= 10;
-        if (types.contains('parking')) score += 70;
-        if (types.contains('shopping_mall')) score += 8;
-
-        if (score < bestScore) {
-          bestScore = score;
-          bestDistance = distance;
-          best = place;
-        }
-      }
-
-      if (best == null) {
-        lastDebug = 'No shop inside entry rules • ${all.length} nearby place ignored';
-        return null;
-      }
-
-      final location = (best['geometry'] as Map<String, dynamic>)['location'] as Map<String, dynamic>;
-      final name = (best['name'] ?? 'Nearby store').toString();
-      final types = ((best['types'] as List?) ?? []).map((e) => e.toString()).toList();
-      final category = _categoryFromTypes(name, types);
-      final risk = _riskForCategory(category, name);
-      lastDebug = 'Places ok • ${all.length} results • $considered shops • best $name ${bestDistance.toStringAsFixed(0)}m';
-
-      return StoreInfo(
-        name: name,
-        category: category,
-        lat: (location['lat'] as num).toDouble(),
-        lng: (location['lng'] as num).toDouble(),
-        distanceMeters: bestDistance,
-        risk: risk,
-      );
-    } catch (e) {
-      lastDebug = 'Places failed: $e';
-      debugPrint('Google Places detection failed: $e');
-      return null;
-    }
+    return StoreInfo(
+      name: candidate.name,
+      category: candidate.category,
+      lat: candidate.lat,
+      lng: candidate.lng,
+      distanceMeters: candidate.distanceMeters,
+      risk: risk,
+    );
   }
 
   static bool _looksLikeKnownShop(String name) {
