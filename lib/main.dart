@@ -2174,11 +2174,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   String? lastNotifiedStore;
   DateTime? lastNotificationAt;
   String? activeStoreName;
-  String? pendingInsideStore;
-  int pendingInsideCount = 0;
-  DateTime? pendingInsideSince;
-  DateTime? lastMovementBlockedAt;
-  final List<Position> recentGpsPoints = [];
   List<StoreVisit> visitHistory = const [];
   List<SpendingEntry> spendingHistory = const [];
   List<BankTransaction> bankTransactions = const [];
@@ -2339,29 +2334,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     setState(() => notificationPrefs = prefs);
   }
 
-  Future<void> _sendExitAlert(String leavingStore) async {
-    activeStoreName = null;
-    pendingInsideStore = null;
-    pendingInsideCount = 0;
-    pendingInsideSince = null;
-    lastNotifiedStore = null;
-    lastNotificationAt = null;
-    if (!notificationPrefs.onExit) return;
-    final exitBody = budget.userName.trim().isEmpty
-        ? 'You left $leavingStore. Your remaining Safe Spend is €${wallet.balance.toStringAsFixed(2)}.'
-        : '${budget.userName}, you left $leavingStore. Your remaining Safe Spend is €${wallet.balance.toStringAsFixed(2)}.';
-    final sent = await _sendSmartNotification(
-      _notificationKey('exit', leavingStore),
-      'SpendGuard • Exit',
-      exitBody,
-    );
-    if (mounted) {
-      setState(() {
-        gpsStatus = '${sent ? 'Exit notification sent' : 'Exit notification blocked'} • $leavingStore';
-      });
-    }
-  }
-
   Future<void> testNotificationNow() async {
     HapticFeedback.heavyImpact();
     final ok = await NotificationService.showTestSequence();
@@ -2399,34 +2371,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     );
   }
 
-
-  void _rememberGpsPoint(Position position) {
-    recentGpsPoints.add(position);
-    if (recentGpsPoints.length > 12) {
-      recentGpsPoints.removeAt(0);
-    }
-  }
-
-  double _gpsSpreadMeters() {
-    if (recentGpsPoints.length < 2) return 999;
-    final anchor = recentGpsPoints.last;
-    double spread = 0;
-    for (final point in recentGpsPoints) {
-      final distance = Geolocator.distanceBetween(
-        anchor.latitude,
-        anchor.longitude,
-        point.latitude,
-        point.longitude,
-      );
-      if (distance > spread) spread = distance;
-    }
-    return spread;
-  }
-
-  bool _hasStableGpsCluster() {
-    if (recentGpsPoints.length < 4) return false;
-    return _gpsSpreadMeters() <= 12;
-  }
 
   Future<void> handlePosition(Position position, {bool force = false}) async {
     final result = await gpsEngine.evaluate(position);
