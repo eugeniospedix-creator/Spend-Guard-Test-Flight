@@ -7,6 +7,14 @@ import 'dart:io' show File;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'gps/geofence_bridge.dart';
+import 'gps/gps_confidence.dart';
+import 'gps/gps_engine.dart';
+import 'gps/gps_models.dart';
+import 'gps/legacy_store_lookup.dart';
+import 'gps/movement_detector.dart';
+import 'gps/store_detector.dart';
+
 import 'package:flutter/rendering.dart' as rendering;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:file_picker/file_picker.dart';
@@ -2157,6 +2165,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   BudgetData budget = BudgetData.empty;
   DailyWallet wallet = const DailyWallet(dayKey: '', balance: 0, spentToday: 0);
   StoreDecision? decision;
+  late final GpsEngine gpsEngine;
   NotificationPrefs notificationPrefs = NotificationPrefs.defaults;
   StreamSubscription<Position>? locationSub;
   bool _isAppForeground = true;
@@ -2178,6 +2187,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    gpsEngine = GpsEngine(
+      movementDetector: MovementDetector(),
+      storeDetector: StoreDetector(lookup: LegacyStoreLookup()),
+      confidenceEngine: GpsConfidenceEngine(),
+      geofenceBridge: GeofenceBridge(),
+    );
     WidgetsBinding.instance.addObserver(this);
     unawaited(NotificationService.requestPermissions());
     unawaited(NativeGeofenceService.startProLocationMode());
@@ -2414,6 +2429,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   }
 
   Future<void> handlePosition(Position position, {bool force = false}) async {
+    final engineDecision = await gpsEngine.evaluatePosition(position);
+    if (!mounted) return;
+
+    NotificationService.lastDebug = 'GPS Engine V2 • ${engineDecision.debugMessage}';
+
     final speedMps = position.speed.isFinite ? position.speed : 0.0;
     final speedKmh = speedMps * 3.6;
     final accuracy = position.accuracy;
