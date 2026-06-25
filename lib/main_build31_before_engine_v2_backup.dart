@@ -745,7 +745,7 @@ class NativeGeofenceService {
         'category': store.category,
         'lat': store.lat,
         'lng': store.lng,
-        'radius': 15.0,
+        'radius': store.triggerRadiusMeters.clamp(25.0, 60.0),
       });
     } catch (e) {
       debugPrint('SpendGuard native geofence start failed: $e');
@@ -2477,11 +2477,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     if (store == null) {
       final leavingStore = activeStoreName;
       if (leavingStore != null) {
-        activeStoreName = null;
-        pendingInsideStore = null;
-        pendingInsideCount = 0;
-        pendingInsideSince = null;
-        NotificationService.lastDebug = 'Flutter cleared active store; native iOS geofence owns exit alerts.';
+        await _sendExitAlert(leavingStore);
       }
       if (!mounted) return;
       setState(() {
@@ -2517,11 +2513,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       pendingInsideSince = null;
       final leavingStore = activeStoreName;
       if (leavingStore != null && (isOutsideExitZone || leavingStore != store.name)) {
-        activeStoreName = null;
-        pendingInsideStore = null;
-        pendingInsideCount = 0;
-        pendingInsideSince = null;
-        NotificationService.lastDebug = 'Flutter outside candidate; native iOS geofence owns exit alerts.';
+        await _sendExitAlert(leavingStore);
       }
       if (!mounted) return;
       setState(() {
@@ -2567,7 +2559,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
     setState(() {
       gpsReady = true;
       currentStore = store.name;
-      gpsStatus = 'Native alert armed • ${store.name} • ${store.distanceMeters.toStringAsFixed(0)}m / arm ${entryRadius.toStringAsFixed(0)}m • accuracy ${position.accuracy.toStringAsFixed(0)}m • iOS now owns entry/exit';
+      gpsStatus = 'Inside ${store.name} • ${store.distanceMeters.toStringAsFixed(0)}m / enter ${entryRadius.toStringAsFixed(0)}m • accuracy ${position.accuracy.toStringAsFixed(0)}m • ${RealStoreService.lastDebug}';
       decision = d;
     });
 
@@ -2582,7 +2574,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
     final now = DateTime.now();
     final cooldownPassed = lastNotificationAt == null || now.difference(lastNotificationAt!).inMinutes >= 4;
-    final shouldSendEnterAlert = false; // Build 31: entry alerts are native iOS only.
+    final shouldSendEnterAlert = notificationPrefs.onEnter && (isNewStore || lastNotifiedStore != store.name || cooldownPassed);
 
     if (!notificationPrefs.onEnter && mounted) {
       setState(() => gpsStatus = 'Inside ${store.name} • entry alerts are OFF in Settings');
@@ -2600,7 +2592,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       );
       if (mounted) {
         setState(() {
-          gpsStatus = 'Flutter entry notification disabled • native iOS geofence owns ${store.name}';
+          gpsStatus = '${sent ? 'Entry notification sent' : 'Entry notification blocked: iPhone Settings > SpendGuard > Notifications'} • ${store.name} • ${store.distanceMeters.toStringAsFixed(0)}m / enter ${entryRadius.toStringAsFixed(0)}m • accuracy ${position.accuracy.toStringAsFixed(0)}m';
         });
       }
     }

@@ -112,7 +112,7 @@ import UserNotifications
 
     let identifier = "spendguard_store_\(safeName)"
     let center = CLLocationCoordinate2D(latitude: lat, longitude: lng)
-    let clampedRadius = min(max(radius, 12.0), 25.0)
+    let clampedRadius = min(max(radius, 25.0), 60.0)
     let region = CLCircularRegion(center: center, radius: clampedRadius, identifier: identifier)
     region.notifyOnEntry = true
     region.notifyOnExit = true
@@ -132,8 +132,6 @@ import UserNotifications
 
     locationManager.startMonitoring(for: region)
     locationManager.requestState(for: region)
-
-    NSLog("SpendGuard native geofence armed: \(identifier), radius \(clampedRadius)m")
   }
 
 
@@ -199,22 +197,7 @@ import UserNotifications
   }
 
   func locationManager(_ manager: CLLocationManager, didDetermineState state: CLRegionState, for region: CLRegion) {
-    guard region.identifier.hasPrefix("spendguard_store_") else { return }
-
-    if state == .inside {
-      NSLog("SpendGuard region state is inside: \(region.identifier)")
-      let storeName = displayName(from: region.identifier)
-      let defaults = UserDefaults.standard
-
-      defaults.set(storeName, forKey: "SpendGuardActiveStoreName")
-      defaults.set(region.identifier, forKey: "SpendGuardActiveStoreId")
-
-      sendSpendGuardNotification(
-        title: "SpendGuard • \(storeName)",
-        body: "You are inside \(storeName). Know before you buy.",
-        key: "native_entry_\(region.identifier)"
-      )
-    }
+    // Do not notify here. This callback is used only to let iOS evaluate the region.
   }
 
   func locationManager(_ manager: CLLocationManager, monitoringDidFailFor region: CLRegion?, withError error: Error) {
