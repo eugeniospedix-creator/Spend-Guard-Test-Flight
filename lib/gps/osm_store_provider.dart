@@ -22,21 +22,63 @@ class OsmStoreCandidate {
 class OsmStoreProvider {
   static String lastDebug = 'OSM not checked yet';
 
+  static OsmStoreCandidate? _cachedBest;
+  static double? _cachedLat;
+  static double? _cachedLng;
+  static DateTime? _cachedAt;
+
+  static const Duration _cacheDuration = Duration(minutes: 5);
+  static const double _cacheReuseDistanceMeters = 80;
+
+  static bool _canUseCache(double lat, double lng) {
+    if (_cachedBest == null || _cachedLat == null || _cachedLng == null || _cachedAt == null) {
+      return false;
+    }
+
+    final age = DateTime.now().difference(_cachedAt!);
+    if (age > _cacheDuration) return false;
+
+    final moved = Geolocator.distanceBetween(lat, lng, _cachedLat!, _cachedLng!);
+    return moved <= _cacheReuseDistanceMeters;
+  }
+
+  static OsmStoreCandidate _cachedCandidateFor(double lat, double lng) {
+    final c = _cachedBest!;
+    final distance = Geolocator.distanceBetween(lat, lng, c.lat, c.lng);
+    return OsmStoreCandidate(
+      name: c.name,
+      category: c.category,
+      lat: c.lat,
+      lng: c.lng,
+      distanceMeters: distance,
+    );
+  }
+
   static Future<OsmStoreCandidate?> detectNearestStore(
     Position position, {
     int radiusMeters = 75,
   }) async {
-    final radius = radiusMeters.clamp(35, 85);
+    final radius = radiusMeters.clamp(35, 120);
     final lat = position.latitude;
     final lng = position.longitude;
 
+    if (_canUseCache(lat, lng)) {
+      final cached = _cachedCandidateFor(lat, lng);
+      lastDebug = [
+        'OSM Build 37 CACHE',
+        'Using cached result',
+        'Best: ${cached.name} • ${cached.category} • ${cached.distanceMeters.toStringAsFixed(0)}m',
+        'Cache age: ${DateTime.now().difference(_cachedAt!).inSeconds}s',
+      ].join('\n');
+      return cached;
+    }
+
     final query = '''
-[out:json][timeout:8];
+[out:json][timeout:12];
 (
   node["shop"](around:$radius,$lat,$lng);
   way["shop"](around:$radius,$lat,$lng);
   relation["shop"](around:$radius,$lat,$lng);
-
   node["amenity"~"cafe|restaurant|fast_food|pharmacy|fuel"](around:$radius,$lat,$lng);
   way["amenity"~"cafe|restaurant|fast_food|pharmacy|fuel"](around:$radius,$lat,$lng);
   relation["amenity"~"cafe|restaurant|fast_food|pharmacy|fuel"](around:$radius,$lat,$lng);
@@ -44,95 +86,155 @@ class OsmStoreProvider {
 out center tags;
 ''';
 
-    try {
-      final uri = Uri.https('overpass-api.de', '/api/interpreter');
-      final response = await http
-          .post(uri, body: {'data': query})
-          .timeout(const Duration(seconds: 10));
+    final endpoints = [
+      Uri.https('overpass-api.de', '/api/interpreter'),
+      Uri.https('overpass.kumi.systems', '/api/interpreter'),
+      Uri.https('overpass.openstreetmap.ru', '/api/interpreter'),
+    ];
 
-      if (response.statusCode != 200) {
-        lastDebug = 'OSM HTTP ${response.statusCode}';
-        return null;
-      }
+    final httpLogs = <String>[];
 
-      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-      final elements =
-          ((decoded['elements'] as List?) ?? []).whereType<Map<String, dynamic>>().toList();
+    for (final uri in endpoints) {
+      try {
+        final response = await http
+            .post(
+              uri,
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'Accept': 'application/json',
+                'User-Agent': 'SpendGuard/1.0 gps-debug-build-35',
+              },
+              body: {'data': query},
+            )
+            .timeout(const Duration(seconds: 14));
 
-      if (elements.isEmpty) {
-        lastDebug = 'No OSM shops within ${radius}m';
-        return null;
-      }
+        httpLogs.add('${uri.host}: HTTP ${response.statusCode}');
 
-      OsmStoreCandidate? best;
-      double bestScore = double.infinity;
-      var considered = 0;
+        if (response.statusCode != 200) {
+          final preview = response.body.replaceAll('\n', ' ');
+          httpLogs.add('Response: ${preview.substring(0, preview.length > 160 ? 160 : preview.length)}');
 
-      for (final element in elements) {
-        final rawTags = element['tags'];
-        final tags = rawTags is Map
-            ? rawTags.map((k, v) => MapEntry(k.toString(), v.toString()))
-            : <String, String>{};
+          if (response.statusCode == 429 && _cachedBest != null) {
+            final cached = _cachedCandidateFor(lat, lng);
+            lastDebug = [
+              'OSM Build 37 RATE LIMITED',
+              ...httpLogs,
+              'Using last cached result instead',
+              'Best: ${cached.name} • ${cached.category} • ${cached.distanceMeters.toStringAsFixed(0)}m',
+            ].join('\n');
+            return cached;
+          }
 
-        final name = (tags['name'] ?? tags['brand'] ?? tags['operator'] ?? '').trim();
-        if (name.isEmpty) continue;
-
-        final shop = (tags['shop'] ?? '').toLowerCase();
-        final amenity = (tags['amenity'] ?? '').toLowerCase();
-
-        final isShop = shop.isNotEmpty;
-        final isSpendAmenity =
-            {'cafe', 'restaurant', 'fast_food', 'pharmacy', 'fuel'}.contains(amenity);
-
-        if (!isShop && !isSpendAmenity && !_looksLikeKnownShop(name)) continue;
-
-        final center = element['center'];
-        final latRaw = element['lat'] ?? (center is Map ? center['lat'] : null);
-        final lngRaw = element['lon'] ?? (center is Map ? center['lon'] : null);
-        if (latRaw is! num || lngRaw is! num) continue;
-
-        final storeLat = latRaw.toDouble();
-        final storeLng = lngRaw.toDouble();
-
-        final distance = Geolocator.distanceBetween(lat, lng, storeLat, storeLng);
-        if (distance > radius) continue;
-
-        considered++;
-
-        var score = distance;
-        if (_looksLikeKnownShop(name)) score -= 45;
-        if (shop == 'supermarket' || shop == 'convenience' || shop == 'mall') score -= 25;
-        if (shop == 'clothes' || shop == 'electronics' || shop == 'department_store') score -= 18;
-        if (amenity == 'fuel') score -= 12;
-        if (amenity == 'pharmacy') score -= 8;
-
-        final category = _categoryFromOsm(shop: shop, amenity: amenity, name: name);
-
-        if (score < bestScore) {
-          bestScore = score;
-          best = OsmStoreCandidate(
-            name: name,
-            category: category,
-            lat: storeLat,
-            lng: storeLng,
-            distanceMeters: distance,
-          );
+          continue;
         }
+
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        final elements = ((decoded['elements'] as List?) ?? [])
+            .whereType<Map<String, dynamic>>()
+            .toList();
+
+        if (elements.isEmpty) {
+          lastDebug = [
+            'OSM Build 35',
+            'Radius: ${radius}m',
+            ...httpLogs,
+            'Returned: 0 places',
+          ].join('\n');
+          return null;
+        }
+
+        OsmStoreCandidate? best;
+        double bestScore = double.infinity;
+        var considered = 0;
+        final rows = <String>[];
+
+        for (final element in elements) {
+          final rawTags = element['tags'];
+          final tags = rawTags is Map
+              ? rawTags.map((k, v) => MapEntry(k.toString(), v.toString()))
+              : <String, String>{};
+
+          final name = (tags['name'] ?? tags['brand'] ?? tags['operator'] ?? '').trim();
+          if (name.isEmpty) continue;
+
+          final shop = (tags['shop'] ?? '').toLowerCase();
+          final amenity = (tags['amenity'] ?? '').toLowerCase();
+
+          final center = element['center'];
+          final latRaw = element['lat'] ?? (center is Map ? center['lat'] : null);
+          final lngRaw = element['lon'] ?? (center is Map ? center['lon'] : null);
+          if (latRaw is! num || lngRaw is! num) continue;
+
+          final storeLat = latRaw.toDouble();
+          final storeLng = lngRaw.toDouble();
+          final distance = Geolocator.distanceBetween(lat, lng, storeLat, storeLng);
+
+          final isSpendAmenity = {'cafe', 'restaurant', 'fast_food', 'pharmacy', 'fuel'}.contains(amenity);
+          final acceptedType = shop.isNotEmpty || isSpendAmenity || _looksLikeKnownShop(name);
+
+          if (!acceptedType) {
+            rows.add('❌ $name • rejected type • ${distance.toStringAsFixed(0)}m');
+            continue;
+          }
+
+          if (distance > radius) {
+            rows.add('❌ $name • too far • ${distance.toStringAsFixed(0)}m');
+            continue;
+          }
+
+          considered++;
+
+          var score = distance;
+          if (_looksLikeKnownShop(name)) score -= 45;
+          if (shop == 'supermarket' || shop == 'convenience' || shop == 'mall') score -= 25;
+          if (shop == 'clothes' || shop == 'electronics' || shop == 'department_store') score -= 18;
+          if (amenity == 'fuel') score -= 12;
+          if (amenity == 'pharmacy') score -= 8;
+
+          final category = _categoryFromOsm(shop: shop, amenity: amenity, name: name);
+          rows.add('✅ $name • $category • ${distance.toStringAsFixed(0)}m • score ${score.toStringAsFixed(0)}');
+
+          if (score < bestScore) {
+            bestScore = score;
+            best = OsmStoreCandidate(
+              name: name,
+              category: category,
+              lat: storeLat,
+              lng: storeLng,
+              distanceMeters: distance,
+            );
+          }
+        }
+
+        lastDebug = [
+          'OSM Build 35',
+          'Radius: ${radius}m',
+          ...httpLogs,
+          'Returned elements: ${elements.length}',
+          'Considered stores: $considered',
+          ...rows.take(12),
+          best == null ? 'Best: NONE' : 'Best: ${best.name} • ${best.distanceMeters.toStringAsFixed(0)}m',
+        ].join('\n');
+
+        if (best != null) {
+          _cachedBest = best;
+          _cachedLat = lat;
+          _cachedLng = lng;
+          _cachedAt = DateTime.now();
+        }
+
+        return best;
+      } catch (e) {
+        httpLogs.add('${uri.host}: failed $e');
       }
-
-      if (best == null) {
-        lastDebug = 'No OSM shop inside rules • ${elements.length} ignored';
-        return null;
-      }
-
-      lastDebug =
-          'OSM ok • ${elements.length} results • $considered shops • best ${best.name} ${best.distanceMeters.toStringAsFixed(0)}m';
-
-      return best;
-    } catch (e) {
-      lastDebug = 'OSM failed: $e';
-      return null;
     }
+
+    lastDebug = [
+      'OSM Build 35 failed',
+      ...httpLogs,
+    ].join('\n');
+
+    return null;
   }
 
   static String _categoryFromOsm({
@@ -142,29 +244,12 @@ out center tags;
   }) {
     final n = name.toLowerCase();
 
-    if (amenity == 'fuel' || n.contains('circle k') || n.contains('maxol')) {
-      return 'fuel';
-    }
-
-    if (amenity == 'pharmacy' || shop == 'chemist' || n.contains('pharmacy')) {
-      return 'pharmacy';
-    }
-
-    if (shop == 'supermarket' || shop == 'convenience' || n.contains('spar') || n.contains('tesco')) {
-      return 'grocery';
-    }
-
-    if (shop == 'clothes' || n.contains('zara') || n.contains('penneys') || n.contains('primark')) {
-      return 'fashion';
-    }
-
-    if (shop == 'electronics' || n.contains('currys') || n.contains('apple')) {
-      return 'electronics';
-    }
-
-    if (amenity == 'cafe' || amenity == 'restaurant' || amenity == 'fast_food') {
-      return 'food';
-    }
+    if (amenity == 'fuel' || n.contains('circle k') || n.contains('maxol')) return 'fuel';
+    if (amenity == 'pharmacy' || shop == 'chemist' || n.contains('pharmacy')) return 'pharmacy';
+    if (shop == 'supermarket' || shop == 'convenience' || n.contains('spar') || n.contains('tesco') || n.contains('centra') || n.contains('supervalu')) return 'grocery';
+    if (shop == 'clothes' || n.contains('zara') || n.contains('penneys') || n.contains('primark')) return 'fashion';
+    if (shop == 'electronics' || n.contains('currys') || n.contains('apple')) return 'electronics';
+    if (amenity == 'cafe' || amenity == 'restaurant' || amenity == 'fast_food') return 'food';
 
     return 'store';
   }

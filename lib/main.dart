@@ -2132,6 +2132,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _isAppForeground = state == AppLifecycleState.resumed;
+
+    if (state == AppLifecycleState.resumed) {
+      unawaited(checkLocation());
+    }
   }
 
   bool _canSendSmartNotification(String key, {Duration cooldown = const Duration(seconds: 60)}) {
@@ -2759,7 +2763,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           Navigator.push(context, MaterialPageRoute(builder: (_) => const HelpScreen()));
         },
       ),
-      StoresScreen(currentStore: currentStore, gpsStatus: gpsStatus, gpsReady: gpsReady, decision: decision, onGps: checkLocation, visits: visitHistory),
+      StoresScreen(currentStore: currentStore, gpsStatus: '$gpsStatus\n\n${StoreDetector.lastDebug}\n\n${OsmStoreProvider.lastDebug}\n\n${NotificationService.lastDebug}', gpsReady: gpsReady, decision: decision, onGps: checkLocation, visits: visitHistory),
       InsightsScreen(budget: budget, wallet: wallet, spendingHistory: spendingHistory, visits: visitHistory, goals: goals, onAddGoal: _openAddGoal, onSelectPrimaryGoal: setPrimaryGoal, onDeleteGoal: deleteGoal),
       AccountsScreen(transactions: bankTransactions, onImportCsv: importBankStatement, wallet: wallet, budget: budget),
     ];
@@ -3966,6 +3970,70 @@ class StoresScreen extends StatelessWidget {
                   Text(gpsStatus, style: const TextStyle(color: AppColors.muted, height: 1.4)),
                   const SizedBox(height: 16),
                   SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: onGps, icon: const Icon(Icons.my_location_rounded), label: Text(tr(context, 'checkGps')))),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        await NotificationService.show(
+                          'SpendGuard shop test',
+                          'Simulated store entry: you are inside a shop. Know before you buy.',
+                        );
+                      },
+                      icon: const Icon(Icons.notifications_active_rounded),
+                      label: const Text('TEST SHOP NOTIFICATION'),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        await NotificationService.showTestSequence();
+                      },
+                      icon: const Icon(Icons.lock_clock_rounded),
+                      label: const Text('TEST LOCKED SCREEN 5s'),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        final simulated = Position(
+                          latitude: 53.349805,
+                          longitude: -6.260310,
+                          timestamp: DateTime.now(),
+                          accuracy: 8,
+                          altitude: 0,
+                          altitudeAccuracy: 0,
+                          heading: 0,
+                          headingAccuracy: 0,
+                          speed: 0,
+                          speedAccuracy: 0,
+                        );
+
+                        final store = await OsmStoreProvider.detectNearestStore(
+                          simulated,
+                          radiusMeters: 120,
+                        );
+
+                        if (store == null) {
+                          await NotificationService.show(
+                            'SpendGuard simulation',
+                            'No simulated shop found. Check OSM debug on GPS screen.',
+                          );
+                        } else {
+                          await NotificationService.show(
+                            'SpendGuard simulated shop',
+                            'Simulated entry: ${store.name} • ${store.category} • ${store.distanceMeters.toStringAsFixed(0)}m',
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.science_rounded),
+                      label: const Text('SIMULATE CITY SHOP'),
+                    ),
+                  ),
                 ],
               ),
             ),
